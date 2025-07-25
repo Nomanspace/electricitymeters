@@ -5,9 +5,19 @@
 
 package org.nomanspace.electricitymeters;
 
+import org.nomanspace.electricitymeters.data.FileDataReader;
+import org.nomanspace.electricitymeters.path.ConfigLoader;
+import org.nomanspace.electricitymeters.path.DatFileSelector;
+import org.nomanspace.electricitymeters.path.TargetDirectoryProvider;
+
+
+
 public class App {
 
     public static void main(String[] args) {
-
+        System.out.println("config.properties находится по URI " + new ConfigLoader().providePath());
+        System.out.println("путь к папке с .dat = " + new TargetDirectoryProvider().providePath());
+        System.out.println("путь к последнему файлу с расширением .dat = " + new DatFileSelector().providePath());
+        new FileDataReader().readDataFile();
     }
 }

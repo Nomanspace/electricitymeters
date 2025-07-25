@@ -90,3 +90,10 @@ http-client.private.env.json
 .idea/ApifoxUploaderProjectSetting.xml
 
 .vscode
+.kilocode
+.roo
+.idea
+node_modules
+package.json
+package-lock.json
+Task

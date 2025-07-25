@@ -10,6 +10,7 @@ plugins {
     // Apply the application plugin to add support for building a CLI application in Java.
     id 'application'
     id 'java'
+    id 'org.beryx.jlink' version '3.1.1'
 }
 
 group = 'org.nomanspace'
@@ -18,6 +19,7 @@ version = '1.0.0'
 repositories {
     // Use Maven Central for resolving dependencies.
     mavenCentral()
+    gradlePluginPortal()
 }
 
 dependencies {
@@ -25,11 +27,8 @@ dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter:5.9.1'
 
     implementation 'info.picocli:picocli:4.7.5'
-    implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.17.0'
-
-
     // This dependency is used by the application.
-    implementation 'com.google.guava:guava:31.1-jre'
+    implementation 'com.google.guava:guava:33.4.6-jre'
 }
 
 // Apply a specific Java toolchain to ease working on different environments.
@@ -42,7 +41,59 @@ java {
 application {
     // Define the main class for the application.
     mainClass = 'org.nomanspace.electricitymeters.App'
+    mainModule = 'org.nomanspace.electricitymeters'
+    applicationDefaultJvmArgs = ['-Dfile.encoding=UTF-8']
 }
+
+def customOutputDir = 'C:/MyBuilds/ElectricityApp'
+
+jlink {
+    imageDir = file("$customOutputDir/image")
+    imageName = 'ElectricityMetersApp'
+    options = ['--strip-debug', '--compress', '2', '--no-header-files', '--no-man-pages']
+
+    forceMerge('guava', 'picocli')
+
+    launcher {
+        name = 'electricity-meters'
+        jvmArgs = ['-Dfile.encoding=UTF-8']
+    }
+
+    jpackage {
+        appVersion = '1.0.0'
+        installerName = 'ElectricityMetersApp'
+        vendor = 'Dante Kaff CO'
+        //'build/jpackage'
+        outputDir = file(customOutputDir)
+        installerType = 'exe'
+        jpackageHome =  'C:\\Program Files\\Zulu\\zulu-17'
+        imageOptions = ['--win-console']
+        installerOptions = [
+            '--win-shortcut',
+            '--win-menu',
+            '--win-dir-chooser',
+            '--win-menu-group', 'ElectricityMetersApp'
+        ]
+    }
+}
+
+task copyConfig(type: Copy) {
+    from(project.rootDir) {
+        include 'config.properties'
+    }
+    into(customOutputDir)
+}
+
+tasks.named('jpackageImage').configure {
+    finalizedBy copyConfig
+}
+
+
+jar {
+    archiveBaseName.set('ElectricityMetersApp')
+    archiveVersion.set('1.0.0')
+}
+
 
 tasks.named('test') {
     // Use JUnit Platform for unit tests.
