@@ -9,8 +9,9 @@ public class Concentrator {
     private String concentratorName;
     private List<Meter> meters;
 
-    public Concentrator(String concentratorName) {
-        this.concentratorName = concentratorName;
+    public Concentrator() {
+        //this.concentratorName = concentratorName;
+        this.concentratorName = null;
         this.meters = new ArrayList<>();
     }
 
@@ -48,5 +49,9 @@ public class Concentrator {
 
     public void setMeters(List<Meter> meters) {
         this.meters = meters;
+    }
+
+    public void addMeter(Meter meter) {
+        meters.add(meter);
     }
 }
