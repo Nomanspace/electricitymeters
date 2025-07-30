@@ -22,24 +22,23 @@ public class DatFileParseHandler implements TextPatternHandler {
                 continue;
             }
 
-            int identTabs = 0;
-            identTabs = countIdentTabs(inputLine);
 
-            //тут меню с выбором метода в зависимости от вложенности таба
-
-            if (identTabs == 1 && inputLine.contains("TYPE=PLC_I_CONCENTRATOR")) {
-                getCurrentConcentrator(inputLine);
-            }
-
-
-            if (identTabs == 2 && inputLine.contains("TYPE=PLC_I_METER")) {
-                Map<String, String> meterMap = getMapFromLine(inputLine);
-                if (currentConcentrator.getConcentratorName().equals(meterMap.get("HOST"))) {
-                    currentConcentrator.addMeter(getMeter(meterMap));
-                }
-            }
 
             System.out.println("Processing line: " + inputLine);
+
+            int identTabs;
+            identTabs = countIdentTabs(inputLine);
+
+            switch (identTabs) {
+                case 1:
+                    handleRootlvlOne(inputLine);
+                    break;
+
+                case 2:
+                    handleRootlvlTwo(inputLine);
+                    break;
+            }
+
         }
 
         return concentrators;
@@ -54,7 +53,7 @@ public class DatFileParseHandler implements TextPatternHandler {
                 meterMap.get("BINDATA"));
     }
 
-    private void getCurrentConcentrator(String inputLine) {
+    private void createAndAddConcentrator(String inputLine) {
         currentConcentrator = new Concentrator();
         currentConcentrator.setConcentratorName(getConcentratorADDR(inputLine));
         concentrators.add(currentConcentrator);
@@ -69,6 +68,9 @@ public class DatFileParseHandler implements TextPatternHandler {
         Map<String, String> lineEntityMap = new HashMap<>();
         String[] subStringsLine = inputLine.split(";");
         for (String subString : subStringsLine) {
+            if (!subString.contains("=")) {
+                continue;
+            }
             int separatorPosition = subString.indexOf('=');
             String key = subString.substring(0, separatorPosition).trim();
             String value = subString.substring(separatorPosition + 1).trim();
@@ -77,6 +79,9 @@ public class DatFileParseHandler implements TextPatternHandler {
         return lineEntityMap;
     }
 
+    /**
+     * Считает количество табов в начале строки для определения уровня вложенности
+     */
     private int countIdentTabs(String splitLine) {
         int count = 0;
         for (char c : splitLine.toCharArray()) {
@@ -85,5 +90,20 @@ public class DatFileParseHandler implements TextPatternHandler {
             }
         }
         return count;
+    }
+
+    private void handleRootlvlOne(String inputLine) {
+        if (inputLine.contains("TYPE=PLC_I_CONCENTRATOR")) {
+            createAndAddConcentrator(inputLine);
+        }
+    }
+
+    private void handleRootlvlTwo(String inputLine) {
+        if (inputLine.contains("TYPE=PLC_I_METER")) {
+            Map<String, String> meterMap = getMapFromLine(inputLine);
+            if (currentConcentrator.getConcentratorName().equals(meterMap.get("HOST"))) {
+                currentConcentrator.addMeter(getMeter(meterMap));
+            }
+        }
     }
 }
