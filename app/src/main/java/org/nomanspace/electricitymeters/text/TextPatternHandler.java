@@ -1,6 +1,10 @@
 package org.nomanspace.electricitymeters.text;
 
+import org.nomanspace.electricitymeters.model.Concentrator;
+
+import java.util.List;
+
 public interface TextPatternHandler {
 
-    String process(String input);
+    List<Concentrator> process(List<String> input);
 }
