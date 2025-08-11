@@ -98,3 +98,5 @@ package.json
 package-lock.json
 Task
 pdfelectricitymeters
+bindata_analysis.md
+.gemini

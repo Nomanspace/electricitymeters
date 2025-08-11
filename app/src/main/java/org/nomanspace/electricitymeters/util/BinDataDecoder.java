@@ -33,6 +33,15 @@ public class BinDataDecoder {
         return result;
     }
 
+    private static long littleEndianBytesToLong(byte[] hexByte, int offset, int lengthForExecute) {
+        long result = 0L;
+        for (int i = offset + lengthForExecute - 1; i >= offset; i--) {
+            result = (result << 8);
+            result = result | (hexByte[i] & 0xFF);
+        }
+        return result;
+    }
+
     public static void main(String[] args) {
         String stringExample = "8523AF";
 
