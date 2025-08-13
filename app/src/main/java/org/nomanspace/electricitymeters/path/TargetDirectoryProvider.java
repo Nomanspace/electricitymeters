@@ -14,34 +14,27 @@ public class TargetDirectoryProvider implements PathProvider {
     public Path providePath() {
         Path configPropPath = new ConfigLoader().providePath();
         Properties properties = new Properties();
-        String propPath = null;
+        String pathFromConfig = null;
 
         try (BufferedReader reader = Files.newBufferedReader(configPropPath, StandardCharsets.UTF_8)) {
-            // List<String> configPropLines = Files.readAllLines(configPropPath);
-            /*
-             * if (configPropLines.isEmpty()) { String errorMsg =
-             * "File config.properties is empty: " + configPropPath;
-             * System.err.println(errorMsg); }
-             */
-            // String firstLine = configPropLines.get(0);
-            // System.out.println("Success! The first line is: " + firstLine);
             properties.load(reader);
-            propPath = properties.getProperty("targetDir");
-            // properties.load(Files.readString(configPropPath).transform());
-
+            pathFromConfig = properties.getProperty("dat.file.directory.path");
         } catch (IOException e) {
             e.printStackTrace();
-            // тут можно вернуть значение по умолчанию или создать кастомный эксепшен
+            // В случае ошибки чтения конфига, выбрасываем исключение
+            throw new RuntimeException("Could not read config.properties file.", e);
         }
 
-        if (propPath == null || propPath.trim().isEmpty()) {
-            String errorMsg = "Property 'targetDir' not found or is empty in config.properties " + propPath;
+        if (pathFromConfig == null || pathFromConfig.trim().isEmpty()) {
+            String errorMsg = "Property 'dat.file.directory.path' not found or is empty in config.properties";
             System.err.println(errorMsg);
             throw new RuntimeException(errorMsg);
         }
 
-        return Paths.get(propPath);
+        // Нормализуем путь: заменяем все виды слэшей на универсальный '/'
+        String normalizedPath = pathFromConfig.replace('\\', '/');
 
+        return Paths.get(normalizedPath);
     }
 
 }

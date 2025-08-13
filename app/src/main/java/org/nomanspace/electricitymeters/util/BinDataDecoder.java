@@ -2,25 +2,11 @@ package org.nomanspace.electricitymeters.util;
 
 import org.nomanspace.electricitymeters.model.Meter;
 
-import java.time.Instant;
-import java.time.format.DateTimeFormatter;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
-
+import java.util.ArrayList;
+import java.util.List;
 
 public class BinDataDecoder {
-
-    private static byte[] hexStringToByteArray(String string) {
-        byte[] binDataByte = new byte[string.length() / 2];
-        int z = 0;
-        for (int i = 0; i < string.length(); i = i + 2) {
-
-            int oneByteUnit = Integer.parseInt(string.substring(i, i + 2), 16);
-            binDataByte[z] = (byte) oneByteUnit;
-            z++;
-        }
-        return binDataByte;
-    }
 
     private static int bcdByteToInt(Byte hexPair) {
         int leftPairChunk = (hexPair >> 4) & 0x0F;
@@ -35,7 +21,6 @@ public class BinDataDecoder {
             result = result * 100;
             result = result + currentChunk;
         }
-
         return result;
     }
 
@@ -48,102 +33,93 @@ public class BinDataDecoder {
         return result;
     }
 
-    private LocalDateTime parseTimestamp(byte[] timestampBytes) {
-        int min = timestampBytes[0];
-        int hour = timestampBytes[1];
-        int day = timestampBytes[2];
-        int month = timestampBytes[3] + 1; // Добавляем 1, так как месяцы в логе 0-11
-        int year = timestampBytes[4] + 2000; // Добавляем 2000, чтобы получить полный год
-        // Секунды отсутствуют в этом формате, используем 0
-        return LocalDateTime.of(year, month, day, hour, min, 0);
+    /**
+     * "Умный" декодер для дробной части. Если байт не является валидным BCD (содержит A-F),
+     * он интерпретируется как обычное бинарное число. Иначе - как BCD.
+     */
+    private int smartBcdByteToInt(byte b) {
+        int highNibble = (b >> 4) & 0x0F;
+        int lowNibble = b & 0x0F;
+
+        if (highNibble > 9 || lowNibble > 9) {
+            // Невалидный BCD, читаем как простое число
+            return b & 0xFF;
+        } else {
+            // Валидный BCD
+            return highNibble * 10 + lowNibble;
+        }
     }
 
-    public Meter decode(String binData, Meter meter) {
+    // --- Основной метод декодирования ---
+
+    public List<Meter> decode(String binData) {
+        List<Meter> decodedMeters = new ArrayList<>();
 
         if (binData == null || binData.isEmpty()) {
-            return meter;
+            return decodedMeters; // Возвращаем пустой список
         }
 
-        byte[] payload = hexStringToByteArray(binData);
-
-        if (payload.length < 14) {
-            return meter;
-        }
+        byte[] payload = ParsingUtils.hexStringToByteArray(binData);
 
         for (int i = 3; i + 11 <= payload.length; i += 11) {
-            Byte recordType = payload[i];
+            Meter recordMeter = new Meter();
+            byte recordType = payload[i];
 
             switch (recordType) {
-                case (byte) 0x40:
-                    System.out.println("Found Tariff 1 record");
-                    long tariffOne = bcdBytesToLong(payload, i + 1, 4);
-                    meter.setEnergyT1(tariffOne);
+                case (byte) 0x40, (byte) 0x41, (byte) 0x42, (byte) 0x43, (byte) 0x4F:
+                    long integerPart = bcdBytesToLong(payload, i + 1, 3);
+                    // Используем новый "умный" метод для дробной части
+                    int fractionalPart = smartBcdByteToInt(payload[i + 4]);
+                    double finalEnergy = integerPart + (fractionalPart / 100.0);
+
+                    if (recordType == (byte) 0x40) recordMeter.setEnergyT1(finalEnergy);
+                    else if (recordType == (byte) 0x41) recordMeter.setEnergyT2(finalEnergy);
+                    else if (recordType == (byte) 0x42) recordMeter.setEnergyT3(finalEnergy);
+                    else if (recordType == (byte) 0x43) recordMeter.setEnergyT4(finalEnergy);
+                    else if (recordType == (byte) 0x4F) recordMeter.setEnergyTotal(finalEnergy);
                     break;
 
-                case (byte) 0x41:
-                    System.out.println("Found Tariff 2 record");
-                    long tariffTwo = bcdBytesToLong(payload, i + 1, 4);
-                    meter.setEnergyT2(tariffTwo);
-                    break;
-
-                case (byte) 0x42:
-                    System.out.println("Found Tariff 3 record");
-                    long tariffThree = bcdBytesToLong(payload, i + 1, 4);
-                    meter.setEnergyT3(tariffThree);
-                    break;
-
-                case (byte) 0x43:
-                    System.out.println("Found Tariff 4 record");
-                    long tariffFour = bcdBytesToLong(payload, i + 1, 4);
-                    meter.setEnergyT4(tariffFour);
-                    break;
-
-                case (byte) 0x4F:
-                    System.out.println("Found summary all Tariff record");
-                    long tariffSummary = bcdBytesToLong(payload, i + 1, 4);
-                    meter.setEnergyTotal(tariffSummary);
-                    break;
+                case (byte) 0x00, (byte) 0x10: recordMeter.setEnergyT1((double) littleEndianBytesToLong(payload, i + 1, 4)); break;
+                case (byte) 0x01, (byte) 0x11: recordMeter.setEnergyT2((double) littleEndianBytesToLong(payload, i + 1, 4)); break;
+                case (byte) 0x02, (byte) 0x12: recordMeter.setEnergyT3((double) littleEndianBytesToLong(payload, i + 1, 4)); break;
+                case (byte) 0x03, (byte) 0x13: recordMeter.setEnergyT4((double) littleEndianBytesToLong(payload, i + 1, 4)); break;
+                case (byte) 0x0F, (byte) 0x1F: recordMeter.setEnergyTotal((double) littleEndianBytesToLong(payload, i + 1, 4)); break;
 
                 case (byte) 0x48:
-                    System.out.println("Found serialNumber record");
                     long serial = littleEndianBytesToLong(payload, i + 1, 4);
-                    String serialNumber = String.valueOf(serial);
-                    meter.setSerialNumber(serialNumber);
+                    recordMeter.setSerialNumber(String.valueOf(serial));
                     break;
 
                 default:
+                    System.out.println("Warning: Unknown record type found: 0x" + String.format("%02X", recordType));
                     break;
             }
 
             int signalLevel = payload[i + 5] & 0xFF;
-            meter.setSignalLevel(signalLevel);
-
-            /*long timeStampSecond = littleEndianBytesToLong(payload, i + 6, 5);
-            LocalDateTime dateTime = LocalDateTime.ofInstant(Instant.ofEpochSecond(timeStampSecond), ZoneOffset.UTC);
-            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-            String formattedDate = dateTime.format(formatter);
-            System.out.println("current 11 byte slice timestamp is " + formattedDate + " raw value: " + timeStampSecond);*/
+            recordMeter.setSignalLevel(signalLevel);
 
             byte[] timestampSlice = java.util.Arrays.copyOfRange(payload, i + 6, i + 11);
-            LocalDateTime timestamp = parseTimestamp(timestampSlice); // Вызываем новый метод
-            System.out.println("Timestamp from record: " + timestamp);
+            LocalDateTime timestamp = ParsingUtils.parseTimestamp(timestampSlice);
+            recordMeter.setLastMeasurementTimestamp(timestamp);
 
+            decodedMeters.add(recordMeter);
         }
 
-        return meter;
+        return decodedMeters;
     }
 
-    public static void main(String[] args) {
-        // 1. Создаем экземпляр нашего декодера
+    /*public static void main(String[] args) {
         BinDataDecoder decoder = new BinDataDecoder();
-        // 2. Создаем пустой объект Meter для заполнения
-        Meter meter = new Meter();
-        // 3. СЮДА НУЖНО ВСТАВИТЬ РЕАЛЬНУЮ СТРОКУ BINDATA ИЗ ЛОГА
-        String realBindata = "8543004F07000020041E030203194F05000059043A171E0219";
+        String bindataWithInvalidBcd = "852F004F5800002B04060B0203194F460000340420151E0219";
 
-        // 4. Запускаем декодирование
-        System.out.println("--- Starting decode ---");
-        decoder.decode(realBindata, meter);
+        System.out.println("--- Starting decode with invalid BCD example ---");
+        List<Meter> meters = decoder.decode(bindataWithInvalidBcd);
         System.out.println("--- Decode finished ---");
-    }
+
+        System.out.println("Found " + meters.size() + " records.");
+        for (int i = 0; i < meters.size(); i++) {
+            System.out.println("--- Record " + (i + 1) + " ---");
+            System.out.println(meters.get(i));
+        }
+    }*/
 }
