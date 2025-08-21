@@ -18,7 +18,7 @@ public class TargetDirectoryProvider implements PathProvider {
 
         try (BufferedReader reader = Files.newBufferedReader(configPropPath, StandardCharsets.UTF_8)) {
             properties.load(reader);
-            pathFromConfig = properties.getProperty("dat.file.directory.path");
+            pathFromConfig = properties.getProperty("targetDir");
         } catch (IOException e) {
             e.printStackTrace();
             // В случае ошибки чтения конфига, выбрасываем исключение
@@ -26,7 +26,7 @@ public class TargetDirectoryProvider implements PathProvider {
         }
 
         if (pathFromConfig == null || pathFromConfig.trim().isEmpty()) {
-            String errorMsg = "Property 'dat.file.directory.path' not found or is empty in config.properties";
+            String errorMsg = "Property 'targetDir' not found or is empty in config.properties";
             System.err.println(errorMsg);
             throw new RuntimeException(errorMsg);
         }

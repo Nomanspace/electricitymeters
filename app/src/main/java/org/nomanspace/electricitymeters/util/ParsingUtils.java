@@ -2,6 +2,7 @@
 package org.nomanspace.electricitymeters.util;
 
 import java.time.LocalDateTime;
+import java.time.YearMonth;
 
 public final class ParsingUtils {
 
@@ -26,23 +27,41 @@ public final class ParsingUtils {
         if (timestampBytes == null || timestampBytes.length < 5) {
             return null; // Возвращаем null, если данные некорректны
         }
-        int min = bcdByteToInt(timestampBytes[0]);
-        int hour = bcdByteToInt(timestampBytes[1]);
-        int day = bcdByteToInt(timestampBytes[2]);
-        int month = bcdByteToInt(timestampBytes[3]);
-        int year = bcdByteToInt(timestampBytes[4]) + 2000;
+        // По наблюдениям TIMEDATE кодирует минуты и часы как "сырые" байты, а не BCD
+        // Пример: 0x17 -> 23 часа, 0x1B -> 27 минут
+        int min = timestampBytes[0] & 0xFF;
+        int hour = timestampBytes[1] & 0xFF;
+        int day = smartBcdByteToInt(timestampBytes[2]);
+        int month = smartBcdByteToInt(timestampBytes[3]);
+        // Год — как «сырое» значение байта + 2000 (не BCD)
+        int year = (timestampBytes[4] & 0xFF) + 2000;
+
+        // В документации встречается кодирование дня и месяца с нуля -> инкрементируем
+        day += 1;
+        month += 1;
 
         if (year < 2000 || year > 2099 || month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || min > 59) {
             return null;
         }
 
+        // Коррекция несуществующих дат (например, 30 февраля -> 28/29)
+        int maxDayInMonth = YearMonth.of(year, month).lengthOfMonth();
+        if (day > maxDayInMonth) {
+            day = maxDayInMonth;
+        }
+
         return LocalDateTime.of(year, month, day, hour, min, 0);
     }
 
-    // Этот метод используется только в parseTimestamp, поэтому он может остаться здесь как вспомогательный
-    private static int bcdByteToInt(Byte hexPair) {
-        int leftPairChunk = (hexPair >> 4) & 0x0F;
-        int rightPairChunk = hexPair & 0x0F;
-        return leftPairChunk * 10 + rightPairChunk;
+    // Умный разбор: если полубайты валидные BCD (<=9), трактуем как BCD,
+    // иначе возвращаем беззнаковое значение байта (0..255).
+    private static int smartBcdByteToInt(byte b) {
+        int highNibble = (b >> 4) & 0x0F;
+        int lowNibble = b & 0x0F;
+        if (highNibble <= 9 && lowNibble <= 9) {
+            return highNibble * 10 + lowNibble;
+        } else {
+            return b & 0xFF;
+        }
     }
 }
