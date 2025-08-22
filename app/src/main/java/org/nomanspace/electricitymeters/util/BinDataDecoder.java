@@ -120,7 +120,7 @@ public class BinDataDecoder {
             recordMeter.setSignalLevel(signalLevel);
 
             byte[] timestampSlice = java.util.Arrays.copyOfRange(payload, i + 6, i + 11);
-            LocalDateTime timestamp = ParsingUtils.parseTimestamp(timestampSlice);
+            LocalDateTime timestamp = ParsingUtils.parseTimestampRawPlusOne(timestampSlice);
             recordMeter.setLastMeasurementTimestamp(timestamp);
 
             decodedMeters.add(recordMeter);

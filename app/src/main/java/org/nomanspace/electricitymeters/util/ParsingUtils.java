@@ -1,4 +1,3 @@
-
 package org.nomanspace.electricitymeters.util;
 
 import java.time.LocalDateTime;
@@ -51,6 +50,39 @@ public final class ParsingUtils {
         }
 
         return LocalDateTime.of(year, month, day, hour, min, 0);
+    }
+
+    /**
+     * Парсинг временной метки из BINDATA: день и месяц берутся как (байт + 1), без BCD-декодирования.
+     */
+    public static LocalDateTime parseTimestampRawPlusOne(byte[] timestampBytes) {
+        if (timestampBytes == null || timestampBytes.length < 5) {
+            LogUtil.debug("[BINDATA-TIME] Некорректная длина массива временной метки: " + (timestampBytes == null ? "null" : timestampBytes.length));
+            return null;
+        }
+        StringBuilder hexDump = new StringBuilder();
+        for (byte b : timestampBytes) {
+            hexDump.append(String.format("%02X ", b));
+        }
+        LogUtil.debug("[BINDATA-TIME] Входные байты: " + hexDump.toString().trim());
+        int min = timestampBytes[0] & 0xFF;
+        int hour = timestampBytes[1] & 0xFF;
+        int day = (timestampBytes[2] & 0xFF) + 1;
+        int month = (timestampBytes[3] & 0xFF) + 1;
+        int year = (timestampBytes[4] & 0xFF) + 2000;
+        LogUtil.debug(String.format("[BINDATA-TIME] min=%d, hour=%d, day=%d, month=%d, year=%d", min, hour, day, month, year));
+        if (year < 2000 || year > 2099 || month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || min > 59) {
+            LogUtil.debug("[BINDATA-TIME] Некорректная дата: min=" + min + ", hour=" + hour + ", day=" + day + ", month=" + month + ", year=" + year);
+            return null;
+        }
+        int maxDayInMonth = java.time.YearMonth.of(year, month).lengthOfMonth();
+        if (day > maxDayInMonth) {
+            LogUtil.debug("[BINDATA-TIME] Коррекция дня: " + day + " -> " + maxDayInMonth);
+            day = maxDayInMonth;
+        }
+        LocalDateTime result = LocalDateTime.of(year, month, day, hour, min, 0);
+        LogUtil.debug("[BINDATA-TIME] Итоговая дата: " + result);
+        return result;
     }
 
     // Умный разбор: если полубайты валидные BCD (<=9), трактуем как BCD,

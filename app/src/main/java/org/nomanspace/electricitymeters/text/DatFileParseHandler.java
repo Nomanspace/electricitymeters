@@ -20,6 +20,8 @@ import java.nio.charset.StandardCharsets;
 
 public class DatFileParseHandler implements TextPatternHandler {
 
+    private static final String TIMEDATE = "TIMEDATE";
+
     private List<Concentrator> concentrators;
     private Concentrator currentConcentrator;
     private Meter lastSeenMeterContext = null;
@@ -36,20 +38,16 @@ public class DatFileParseHandler implements TextPatternHandler {
                 continue;
             }
 
-            String currentLine = inputLine;
-
-            int identTabs = countIdentTabs(currentLine);
+            int identTabs = countIdentTabs(inputLine);
 
             switch (identTabs) {
                 case 1:
-                    handleRootLvlOne(currentLine);
+                    handleRootLvlOne(inputLine);
                     break;
                 case 2:
-                    handleRootLvlTwo(currentLine);
+                    handleRootLvlTwo(inputLine);
                     break;
-                case 3:
-                    handleRootLvlThree(currentLine);
-                    break;
+                // Удалён вызов handleRootLvlThree, так как он не нужен на реальных данных
                 default:
                     break;
             }
@@ -67,32 +65,23 @@ public class DatFileParseHandler implements TextPatternHandler {
         }
     }
 
-    // Атрибуты, которые могут следовать отдельными строками внутри одного PLC_I_METER блока (indent=3)
-    private void handleRootLvlThree(String inputLine) {
-        Map<String, String> lineMap = getMapFromLine(inputLine);
-        if (lineMap.isEmpty() || lastSeenMeterContext == null) {
-            return;
-        }
-
-        // Подхватываем метаданные, если встретились как дочерние записи
-        String roomVal = firstNonEmpty(lineMap, "Помещение", "Room", "ROOM", "Rm");
-        if (roomVal != null && (lastSeenMeterContext.getRoom() == null || lastSeenMeterContext.getRoom().isEmpty())) {
-            lastSeenMeterContext.setRoom(roomVal);
-        }
-        String bldVal = firstNonEmpty(lineMap, "Здание", "Building", "BUILDING", "Bld", "Bldg");
-        if (bldVal != null && (lastSeenMeterContext.getBuilding() == null || lastSeenMeterContext.getBuilding().isEmpty())) {
-            lastSeenMeterContext.setBuilding(bldVal);
-        }
-    }
-
     private void handleRootLvlTwo(String inputLine) {
         Map<String, String> lineMap = getMapFromLine(inputLine);
         if (lineMap.isEmpty()) {
             return;
         }
 
-        // Независимо от строки TYPE, если на этом уровне приходят поля "Здание"/"Помещение",
-        // обновим текущий контекст счётчика (если он уже открыт).
+        updateMeterContextWithLocation(lineMap);
+        if (isMeterStart(lineMap)) {
+            startNewMeter(lineMap);
+        }
+        if (lineMap.containsKey("BINDATA")) {
+            processBindata(lineMap);
+        }
+    }
+
+    // Вынесено: обновление контекста Meter по "Помещение"/"Здание"
+    private void updateMeterContextWithLocation(Map<String, String> lineMap) {
         if (lastSeenMeterContext != null) {
             String roomVal = firstNonEmpty(lineMap, "Помещение", "Room", "ROOM", "Rm");
             if (roomVal != null && (lastSeenMeterContext.getRoom() == null || lastSeenMeterContext.getRoom().isEmpty())) {
@@ -103,115 +92,137 @@ public class DatFileParseHandler implements TextPatternHandler {
                 lastSeenMeterContext.setBuilding(bldVal);
             }
         }
+    }
 
-        if (lineMap.containsKey("TYPE") && lineMap.get("TYPE").equals("PLC_I_METER")) {
-            lastSeenMeterContext = new Meter();
-            lastSeenMeterContext.setAddress(lineMap.get("ADDR"));
-            lastSeenMeterContext.setHost(lineMap.get("HOST"));
-            // Доп. контекст из лога
-            String roomValOnType = firstNonEmpty(lineMap, "Помещение", "Room", "ROOM", "Rm");
-            if (roomValOnType != null) {
-                lastSeenMeterContext.setRoom(roomValOnType);
-            }
-            String bldValOnType = firstNonEmpty(lineMap, "Здание", "Building", "BUILDING", "Bld", "Bldg");
-            if (bldValOnType != null) {
-                lastSeenMeterContext.setBuilding(bldValOnType);
-            }
+    // Вынесено: определение начала нового счетчика
+    private boolean isMeterStart(Map<String, String> lineMap) {
+        return lineMap.containsKey("TYPE") && "PLC_I_METER".equals(lineMap.get("TYPE"));
+    }
 
-            if (lineMap.containsKey("TIMEDATE")) {
-                byte[] timestampBytes = ParsingUtils.hexStringToByteArray(lineMap.get("TIMEDATE"));
-                LocalDateTime logTimestamp = ParsingUtils.parseTimestamp(timestampBytes);
-                lastSeenMeterContext.setLogTimestamp(logTimestamp);
-                LogUtil.debug(String.format("[PARSE] PLC_I_METER TIMEDATE parsed -> %s", String.valueOf(logTimestamp)));
-            }
-
-            // Логируем обнаружение строки счетчика
-            LogUtil.debug(String.format(
+    // Вынесено: инициализация нового Meter
+    private void startNewMeter(Map<String, String> lineMap) {
+        lastSeenMeterContext = new Meter();
+        lastSeenMeterContext.setAddress(lineMap.get("ADDR"));
+        lastSeenMeterContext.setHost(lineMap.get("HOST"));
+        String roomValOnType = firstNonEmpty(lineMap, "Помещение", "Room", "ROOM", "Rm");
+        if (roomValOnType != null) {
+            lastSeenMeterContext.setRoom(roomValOnType);
+        }
+        String bldValOnType = firstNonEmpty(lineMap, "Зда��ие", "Building", "BUILDING", "Bld", "Bldg");
+        if (bldValOnType != null) {
+            lastSeenMeterContext.setBuilding(bldValOnType);
+        }
+        if (lineMap.containsKey(TIMEDATE)) {
+            byte[] timestampBytes = ParsingUtils.hexStringToByteArray(lineMap.get(TIMEDATE));
+            // Используем новую логику: сырое значение байта + 1 для дня и месяца
+            LocalDateTime logTimestamp = ParsingUtils.parseTimestampRawPlusOne(timestampBytes);
+            lastSeenMeterContext.setLogTimestamp(logTimestamp);
+            LogUtil.debug(String.format("[PARSE] PLC_I_METER TIMEDATE parsed (raw+1) -> %s", logTimestamp));
+        }
+        LogUtil.debug(String.format(
                 "[PARSE] PLC_I_METER: ADDR=%s, HOST=%s, ROOM=%s, BUILDING=%s, TIMEDATE=%s",
                 lastSeenMeterContext.getAddress(),
                 lastSeenMeterContext.getHost(),
                 lastSeenMeterContext.getRoom(),
                 lastSeenMeterContext.getBuilding(),
-                lineMap.getOrDefault("TIMEDATE", "-")
-            ));
+                lineMap.getOrDefault(TIMEDATE, "-")
+        ));
+    }
+
+    // Вынесено: обработка BINDATA
+    private void processBindata(Map<String, String> lineMap) {
+        if (lastSeenMeterContext == null) return;
+        String bindata = lineMap.get("BINDATA");
+        logBindataInfo(bindata);
+        List<Meter> decodedMeters = decodeMeters(bindata);
+        if (decodedMeters.isEmpty()) return;
+        Meter chosenInPacket = selectBestMeter(decodedMeters);
+        if (chosenInPacket == null) return;
+        Meter combined = createCombinedMeter(lastSeenMeterContext, chosenInPacket);
+        applySerialNumberFromCacheIfNeeded(combined);
+        updateSerialNumberCacheIfNeeded(combined);
+        if (currentConcentrator != null) {
+            currentConcentrator.addMeter(combined);
         }
+    }
 
-        if (lineMap.containsKey("BINDATA")) {
-            if(lastSeenMeterContext != null) {
-                String bindata = lineMap.get("BINDATA");
-                LogUtil.debug(String.format("[PARSE] BINDATA обнаружен для ADDR=%s, HOST=%s, длина=%d",
-                        lastSeenMeterContext.getAddress(),
-                        lastSeenMeterContext.getHost(),
-                        bindata != null ? bindata.length() : 0));
-                List<Meter> decodedMeters = binDataDecoder.decode(
-                        bindata,
-                        lastSeenMeterContext.getHost(),
-                        lastSeenMeterContext.getAddress()
-                );
-                LogUtil.debug(String.format("decodedMeters: %d", decodedMeters.size()));
+    // Вынесено: логирование информации о BINDATA
+    private void logBindataInfo(String bindata) {
+        LogUtil.debug(String.format("[PARSE] BINDATA обнаружен для ADDR=%s, HOST=%s, длина=%d",
+                lastSeenMeterContext.getAddress(),
+                lastSeenMeterContext.getHost(),
+                bindata != null ? bindata.length() : 0));
+    }
 
-                // Внутри одного BINDATA выбираем запись с МАКСИМАЛЬНОЙ суммарной энергией (0x4F),
-                // при равенстве — с наиболее поздней меткой времени; если 0x4F нет, берём самую позднюю по времени.
-                Comparator<Meter> byEnergyThenTime = Comparator
-                        .comparing((Meter m) -> m.getEnergyTotal(), Comparator.nullsFirst(Comparator.naturalOrder()))
-                        .thenComparing(Meter::getLastMeasurementTimestamp, Comparator.nullsLast(Comparator.naturalOrder()));
+    // Вынесено: декодирование списка Meter
+    private List<Meter> decodeMeters(String bindata) {
+        List<Meter> decodedMeters = binDataDecoder.decode(
+                bindata,
+                lastSeenMeterContext.getHost(),
+                lastSeenMeterContext.getAddress()
+        );
+        LogUtil.debug(String.format("decodedMeters: %d", decodedMeters.size()));
+        return decodedMeters;
+    }
 
-                Optional<Meter> bestByEnergy = decodedMeters.stream()
-                        .filter(m -> m.getEnergyTotal() != null)
-                        .max(byEnergyThenTime);
+    // Вынесено: создание итогового Meter
+    private Meter createCombinedMeter(Meter context, Meter chosen) {
+        Meter combined = new Meter();
+        combined.setAddress(context.getAddress());
+        combined.setHost(context.getHost());
+        combined.setRoom(context.getRoom());
+        combined.setBuilding(context.getBuilding());
+        combined.setLogTimestamp(context.getLogTimestamp());
+        combined.setSerialNumber(chosen.getSerialNumber());
+        combined.setEnergyTotal(chosen.getEnergyTotal());
+        combined.setEnergyT1(chosen.getEnergyT1());
+        combined.setEnergyT2(chosen.getEnergyT2());
+        combined.setEnergyT3(chosen.getEnergyT3());
+        combined.setEnergyT4(chosen.getEnergyT4());
+        combined.setSignalLevel(chosen.getSignalLevel());
+        combined.setLastMeasurementTimestamp(chosen.getLastMeasurementTimestamp());
+        return combined;
+    }
 
-                Meter chosenInPacket = bestByEnergy.orElseGet(() ->
-                        decodedMeters.stream()
-                                .max(Comparator.comparing(Meter::getLastMeasurementTimestamp, Comparator.nullsLast(Comparator.naturalOrder())))
-                                .orElse(null)
-                );
-
-                if (chosenInPacket == null) {
-                    // Нет полезных данных — пропускаем этот пакет
-                    return;
-                }
-
-                // Объединяем: переносим контекст PLC и поля из выбранной записи
-                Meter combined = new Meter();
-                combined.setAddress(lastSeenMeterContext.getAddress());
-                combined.setHost(lastSeenMeterContext.getHost());
-                combined.setRoom(lastSeenMeterContext.getRoom());
-                combined.setBuilding(lastSeenMeterContext.getBuilding());
-                combined.setLogTimestamp(lastSeenMeterContext.getLogTimestamp());
-
-                // Поля из выбранной записи (энергии и метка времени — строго из неё)
-                combined.setSerialNumber(chosenInPacket.getSerialNumber());
-                combined.setEnergyTotal(chosenInPacket.getEnergyTotal());
-                combined.setEnergyT1(chosenInPacket.getEnergyT1());
-                combined.setEnergyT2(chosenInPacket.getEnergyT2());
-                combined.setEnergyT3(chosenInPacket.getEnergyT3());
-                combined.setEnergyT4(chosenInPacket.getEnergyT4());
-                combined.setSignalLevel(chosenInPacket.getSignalLevel());
-                combined.setLastMeasurementTimestamp(chosenInPacket.getLastMeasurementTimestamp());
-
-                // Если серийник в этом пакете отсутствует — попробуем достать из кэша
-                if ((combined.getSerialNumber() == null || combined.getSerialNumber().isEmpty())
-                        && combined.getHost() != null && combined.getAddress() != null) {
-                    String key = combined.getHost() + ":" + combined.getAddress();
-                    if (serialCache.containsKey(key)) {
-                        combined.setSerialNumber(serialCache.get(key));
-                        LogUtil.debug(String.format("Применён кэш для %s -> %s", key, combined.getSerialNumber()));
-                    }
-                }
-
-                // Обновим кэш, если в пакете появился серийный
-                if (combined.getSerialNumber() != null && !combined.getSerialNumber().isEmpty()
-                        && combined.getHost() != null && combined.getAddress() != null) {
-                    String key = combined.getHost() + ":" + combined.getAddress();
-                    serialCache.put(key, combined.getSerialNumber());
-                }
-
-                if (currentConcentrator != null) {
-                    currentConcentrator.addMeter(combined);
-                }
-                // Не сбрасываем контекст: для одного PLC_I_METER может быть несколько BINDATA (например, отдельный пакет с серийником 0x48)
+    // Вынесено: применение серийного номера из кэша
+    private void applySerialNumberFromCacheIfNeeded(Meter meter) {
+        if ((meter.getSerialNumber() == null || meter.getSerialNumber().isEmpty())
+                && meter.getHost() != null && meter.getAddress() != null) {
+            String key = meter.getHost() + ":" + meter.getAddress();
+            if (serialCache.containsKey(key)) {
+                meter.setSerialNumber(serialCache.get(key));
+                LogUtil.debug(String.format("Применён кэш для %s -> %s", key, meter.getSerialNumber()));
             }
         }
+    }
+
+    // Вынесено: обновление кэша серийных номеров
+    private void updateSerialNumberCacheIfNeeded(Meter meter) {
+        if (meter.getSerialNumber() != null && !meter.getSerialNumber().isEmpty()
+                && meter.getHost() != null && meter.getAddress() != null) {
+            String key = meter.getHost() + ":" + meter.getAddress();
+            serialCache.put(key, meter.getSerialNumber());
+        }
+    }
+
+    // Вынесено: выбор лучшего Meter из списка
+    private Meter selectBestMeter(List<Meter> decodedMeters) {
+        if (decodedMeters == null || decodedMeters.isEmpty()) {
+            return null;
+        }
+        Comparator<Meter> byEnergyThenTime = Comparator
+                .comparing(Meter::getEnergyTotal, Comparator.nullsFirst(Comparator.naturalOrder()))
+                .thenComparing(Meter::getLastMeasurementTimestamp, Comparator.nullsLast(Comparator.naturalOrder()));
+
+        Optional<Meter> bestByEnergy = decodedMeters.stream()
+                .filter(m -> m.getEnergyTotal() != null)
+                .max(byEnergyThenTime);
+
+        return bestByEnergy.orElseGet(() ->
+                decodedMeters.stream()
+                        .max(Comparator.comparing(Meter::getLastMeasurementTimestamp, Comparator.nullsLast(Comparator.naturalOrder())))
+                        .orElse(null)
+        );
     }
 
     // Вспомогательный метод для преобразования байтов в hex-строку
@@ -228,10 +239,10 @@ public class DatFileParseHandler implements TextPatternHandler {
         if (inputLine == null || inputLine.trim().isEmpty()) {
             return Collections.emptyMap();
         }
-        
+
         Map<String, String> lineEntityMap = new HashMap<>();
         String trimmedLine = inputLine.trim();
-        
+
         try {
             // Выводим hex-представление строки в кодировке CP1251
             StringBuilder hexDump = new StringBuilder("Hex представление (CP1251): ");
@@ -239,21 +250,21 @@ public class DatFileParseHandler implements TextPatternHandler {
                 hexDump.append(String.format("%02X ", b));
             }
             LogUtil.debug(hexDump.toString());
-            
+
             // Конвертируем строку из CP1251 в UTF-8
             String utf8Line = new String(trimmedLine.getBytes("CP1251"), StandardCharsets.UTF_8);
             LogUtil.debug("После конвертации в UTF-8: " + utf8Line);
-            
+
             // Используем сконвертированную строку для дальнейшей обработки
             trimmedLine = utf8Line;
         } catch (UnsupportedEncodingException e) {
             LogUtil.error("Ошибка при конвертации из CP1251: " + e.getMessage());
             // Продолжаем с оригинальной строкой в случае ошибки
         }
-        
+
         // Разбиваем строку на пары ключ-значение
         String[] subStringsLine = trimmedLine.split(";");
-        
+
         for (String subString : subStringsLine) {
             subString = subString.trim();
             if (subString.contains("=")) {
@@ -263,17 +274,17 @@ public class DatFileParseHandler implements TextPatternHandler {
                     String value = parts[1].trim();
                     if (!key.isEmpty()) {
                         // Выводим hex-представление ключа и значения
-                        LogUtil.debug(String.format("  Ключ: '%s' (hex: %s) = '%s' (hex: %s)", 
-                            key, 
-                            bytesToHex(key.getBytes(StandardCharsets.UTF_8)),
-                            value,
-                            bytesToHex(value.getBytes(StandardCharsets.UTF_8))));
+                        LogUtil.debug(String.format("  Ключ: '%s' (hex: %s) = '%s' (hex: %s)",
+                                key,
+                                bytesToHex(key.getBytes(StandardCharsets.UTF_8)),
+                                value,
+                                bytesToHex(value.getBytes(StandardCharsets.UTF_8))));
                         lineEntityMap.put(key, value);
                     }
                 }
             }
         }
-        
+
         return lineEntityMap;
     }
 
@@ -295,11 +306,15 @@ public class DatFileParseHandler implements TextPatternHandler {
             LogUtil.debug("firstNonEmpty: пустые входные данные");
             return null;
         }
-        
         LogUtil.debug("Доступные ключи в карте: " + map.keySet());
         LogUtil.debug("Ищем ключи: " + Arrays.toString(keys));
-        
-        // Сначала проверяем точное совпадение
+        String result = findExactKey(map, keys);
+        if (result != null) return result;
+        return findByPrefixKey(map, keys);
+    }
+
+    // Точное совпадение ключа
+    private static String findExactKey(Map<String, String> map, String... keys) {
         for (String k : keys) {
             if (map.containsKey(k)) {
                 String v = map.get(k);
@@ -309,27 +324,41 @@ public class DatFileParseHandler implements TextPatternHandler {
                 }
             }
         }
-        
-        // Если точного совпадения нет, ищем по первым буквам
+        return null;
+    }
+
+    // Совпадение по первым буквам (префикс)
+    private static String findByPrefixKey(Map<String, String> map, String... keys) {
         for (Map.Entry<String, String> entry : map.entrySet()) {
             if (entry.getKey() == null) continue;
-            
             String entryKey = entry.getKey().trim();
-            for (String k : keys) {
-                if (k == null) continue;
-                
-                if (entryKey.regionMatches(true, 0, k, 0, Math.min(3, Math.min(entryKey.length(), k.length())))) {
-                    String v = entry.getValue();
-                    if (v != null && !v.trim().isEmpty()) {
-                        LogUtil.debug(String.format("Найдено совпадение по первым буквам: '%s' ~ '%s' = '%s'", 
-                            entryKey, k, v));
-                        return v.trim();
-                    }
-                }
+            if (isPrefixMatch(entryKey, keys)) {
+                String v = entry.getValue();
+                String result = getNonEmptyTrimmedValue(entryKey, v, keys);
+                if (result != null) return result;
             }
         }
-        
         LogUtil.debug("Ни один из искомых ключей не найден");
         return null;
+    }
+
+    // Вынесено: получение непустого значения с логированием
+    private static String getNonEmptyTrimmedValue(String entryKey, String value, String... keys) {
+        if (value != null && !value.trim().isEmpty()) {
+            LogUtil.debug(String.format("Найдено совпадение по первым буквам: '%s' ~ один из %s = '%s'", entryKey, Arrays.toString(keys), value));
+            return value.trim();
+        }
+        return null;
+    }
+
+    // Вынесено: проверка совпадения по префиксу
+    private static boolean isPrefixMatch(String entryKey, String... keys) {
+        for (String k : keys) {
+            if (k == null) continue;
+            if (entryKey.regionMatches(true, 0, k, 0, Math.min(3, Math.min(entryKey.length(), k.length())))) {
+                return true;
+            }
+        }
+        return false;
     }
 }

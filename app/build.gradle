@@ -110,7 +110,7 @@ tasks.named('copyJpackageImage').configure {
 }
 
 tasks.named('test') {
-    enabled = false // Временно отключаем тесты
+    enabled = true // Временно отключаем тесты
     useJUnitPlatform()
 }
 
