@@ -108,7 +108,7 @@ public class DatFileParseHandler implements TextPatternHandler {
         if (roomValOnType != null) {
             lastSeenMeterContext.setRoom(roomValOnType);
         }
-        String bldValOnType = firstNonEmpty(lineMap, "Зда��ие", "Building", "BUILDING", "Bld", "Bldg");
+        String bldValOnType = firstNonEmpty(lineMap, "Здание", "Building", "BUILDING", "Bld", "Bldg");
         if (bldValOnType != null) {
             lastSeenMeterContext.setBuilding(bldValOnType);
         }
@@ -136,13 +136,15 @@ public class DatFileParseHandler implements TextPatternHandler {
         logBindataInfo(bindata);
         List<Meter> decodedMeters = decodeMeters(bindata);
         if (decodedMeters.isEmpty()) return;
-        Meter chosenInPacket = selectBestMeter(decodedMeters);
-        if (chosenInPacket == null) return;
-        Meter combined = createCombinedMeter(lastSeenMeterContext, chosenInPacket);
-        applySerialNumberFromCacheIfNeeded(combined);
-        updateSerialNumberCacheIfNeeded(combined);
-        if (currentConcentrator != null) {
-            currentConcentrator.addMeter(combined);
+        
+        // Добавляем ВСЕ записи от декодера, а не только одну "лучшую"
+        for (Meter decodedMeter : decodedMeters) {
+            Meter combined = createCombinedMeter(lastSeenMeterContext, decodedMeter);
+            applySerialNumberFromCacheIfNeeded(combined);
+            updateSerialNumberCacheIfNeeded(combined);
+            if (currentConcentrator != null) {
+                currentConcentrator.addMeter(combined);
+            }
         }
     }
 
@@ -205,25 +207,7 @@ public class DatFileParseHandler implements TextPatternHandler {
         }
     }
 
-    // Вынесено: выбор лучшего Meter из списка
-    private Meter selectBestMeter(List<Meter> decodedMeters) {
-        if (decodedMeters == null || decodedMeters.isEmpty()) {
-            return null;
-        }
-        Comparator<Meter> byEnergyThenTime = Comparator
-                .comparing(Meter::getEnergyTotal, Comparator.nullsFirst(Comparator.naturalOrder()))
-                .thenComparing(Meter::getLastMeasurementTimestamp, Comparator.nullsLast(Comparator.naturalOrder()));
-
-        Optional<Meter> bestByEnergy = decodedMeters.stream()
-                .filter(m -> m.getEnergyTotal() != null)
-                .max(byEnergyThenTime);
-
-        return bestByEnergy.orElseGet(() ->
-                decodedMeters.stream()
-                        .max(Comparator.comparing(Meter::getLastMeasurementTimestamp, Comparator.nullsLast(Comparator.naturalOrder())))
-                        .orElse(null)
-        );
-    }
+    // УДАЛЕНО: метод selectBestMeter больше не нужен
 
     // Вспомогательный метод для преобразования байтов в hex-строку
     private static String bytesToHex(byte[] bytes) {
