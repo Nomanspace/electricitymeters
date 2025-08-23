@@ -11,6 +11,7 @@ import org.nomanspace.electricitymeters.model.*;
 import org.nomanspace.electricitymeters.util.LogUtil;
 
 import java.time.format.DateTimeFormatter;
+import java.time.LocalDateTime;
 
 public class DataAnalyzer {
 
@@ -119,10 +120,29 @@ public class DataAnalyzer {
                         chosen.setRoom(roomFromGroup);
                     }
                 }
-                latestReadings.add(chosen);
+                
+                // Проверяем, что выбранная запись за текущий месяц
+                if (isCurrentMonth(chosen.getLastMeasurementTimestamp())) {
+                    latestReadings.add(chosen);
+                    LogUtil.debug(String.format("Добавлена запись для %s: дата=%s, энергия=%.2f", 
+                            uniqueId, chosen.getLastMeasurementTimestamp(), chosen.getEnergyTotal()));
+                } else {
+                    LogUtil.debug(String.format("Запись для %s отброшена: дата=%s не за текущий месяц", 
+                            uniqueId, chosen.getLastMeasurementTimestamp()));
+                }
             }
         }
 
         return latestReadings;
+    }
+
+    /**
+     * Проверяет, относится ли дата к текущему месяцу
+     */
+    private boolean isCurrentMonth(LocalDateTime timestamp) {
+        if (timestamp == null) return false;
+        LocalDateTime now = LocalDateTime.now();
+        return timestamp.getYear() == now.getYear() && 
+               timestamp.getMonth() == now.getMonth();
     }
 }
