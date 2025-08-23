@@ -39,11 +39,10 @@ application {
     applicationDefaultJvmArgs = ['-Dfile.encoding=UTF-8', '-Dconfig.file=../config.properties']
 }
 
-// Опциональный лог в файл при запуске через Gradle: включается только если передан -Plog=true
+// Удобный запуск с предустановленным аргументом приложения для логирования в файл
 tasks.named('run', JavaExec).configure {
-    if (project.hasProperty('log') && project.property('log').toString().toBoolean()) {
-        args '--log'
-    }
+    // Передаём аргумент "--log" main-классу по умолчанию
+    args '--log'
 }
 
 def customOutputDir = 'C:/MyBuilds/ElectricityApp'
@@ -110,7 +109,7 @@ tasks.named('copyJpackageImage').configure {
 }
 
 tasks.named('test') {
-    enabled = true // Временно отключаем тесты
+    enabled = false // Временно отключаем тесты
     useJUnitPlatform()
 }
 

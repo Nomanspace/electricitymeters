@@ -9,22 +9,6 @@ import org.nomanspace.electricitymeters.util.LogUtil;
 
 public class BinDataDecoder {
 
-    private static int bcdByteToInt(Byte hexPair) {
-        int leftPairChunk = (hexPair >> 4) & 0x0F;
-        int rightPairChunk = hexPair & 0x0F;
-        return leftPairChunk * 10 + rightPairChunk;
-    }
-
-    private static long bcdBytesToLong(byte[] bcdBytes, int offset, int lengthForExecute) {
-        long result = 0;
-        for (int i = offset + lengthForExecute - 1; i >= offset; i--) {
-            int currentChunk = bcdByteToInt(bcdBytes[i]);
-            result = result * 100;
-            result = result + currentChunk;
-        }
-        return result;
-    }
-
     private static long littleEndianBytesToLong(byte[] hexByte, int offset, int lengthForExecute) {
         long result = 0L;
         for (int i = offset + lengthForExecute - 1; i >= offset; i--) {
@@ -42,16 +26,6 @@ public class BinDataDecoder {
         return sb.toString();
     }
 
-    private int smartBcdByteToInt(byte b) {
-        int highNibble = (b >> 4) & 0x0F;
-        int lowNibble = b & 0x0F;
-
-        if (highNibble > 9 || lowNibble > 9) {
-            return b & 0xFF;
-        } else {
-            return highNibble * 10 + lowNibble;
-        }
-    }
 
     // Старый вход без контекста оставляем для совместимости
     public List<Meter> decode(String binData) {
