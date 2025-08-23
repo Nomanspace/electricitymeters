@@ -10,6 +10,8 @@ import java.util.stream.Collectors;
 import org.nomanspace.electricitymeters.model.*;
 import org.nomanspace.electricitymeters.util.LogUtil;
 
+import java.time.format.DateTimeFormatter;
+
 public class DataAnalyzer {
 
     /**
@@ -51,29 +53,36 @@ public class DataAnalyzer {
             }
         }
 
-        // 3. В каждой группе выбираем запись с МАКСИМАЛЬНОЙ суммарной энергией (0x4F),
-        // при равенстве энергий — с наиболее поздней меткой времени из бин-данных.
-        // Если суммарной энергии нет ни в одной записи группы, откатываемся к правилу "самая поздняя по времени".
+        // 3. В каждой группе выбираем запись с самой последней датой.
+        // Приоритет выбора:
+        // 1. Самая свежая метка времени (lastMeasurementTimestamp).
+        // 2. При равенстве времени - запись с наибольшей суммарной энергией (energyTotal).
         List<Meter> latestReadings = new ArrayList<>();
-        for (List<Meter> group : readingsGroupedById.values()) {
-            Comparator<Meter> byEnergyThenTime = Comparator
-                    .comparing((Meter m) -> m.getEnergyTotal(), Comparator.nullsFirst(Comparator.naturalOrder()))
-                    .thenComparing(Meter::getLastMeasurementTimestamp, Comparator.nullsLast(Comparator.naturalOrder()));
+        for (Map.Entry<String, List<Meter>> entry : readingsGroupedById.entrySet()) {
+            List<Meter> group = entry.getValue();
+            String uniqueId = entry.getKey();
 
-            // Найдем максимум по суммарной энергии (учитываем, что null < любое значение)
-            Optional<Meter> maxByEnergy = group.stream()
-                    .filter(m -> m.getEnergyTotal() != null)
-                    .max(byEnergyThenTime);
-
-            Meter chosen;
-            if (maxByEnergy.isPresent()) {
-                chosen = maxByEnergy.get();
-            } else {
-                // Фолбэк: если нет energyTotal, берем самую позднюю по времени
-                chosen = group.stream()
-                        .max(Comparator.comparing(Meter::getLastMeasurementTimestamp, Comparator.nullsLast(Comparator.naturalOrder())))
-                        .orElse(null);
+            // --- ВРЕМЕННОЕ ЛОГИРОВАНИЕ ДЛЯ ДИАГНОСТИКИ ---
+            if ("2001:7".equals(uniqueId) || (group.stream().anyMatch(m -> "7".equals(m.getAddress()) && "2001".equals(m.getHost())))) {
+                LogUtil.info("--- ДИАГНОСТИКА ДЛЯ СЧЕТЧИКА " + uniqueId + " ---");
+                DateTimeFormatter dtf = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+                for (int i = 0; i < group.size(); i++) {
+                    Meter m = group.get(i);
+                    String ts = m.getLastMeasurementTimestamp() != null ? m.getLastMeasurementTimestamp().format(dtf) : "null";
+                    Double energy = m.getEnergyTotal();
+                    LogUtil.info(String.format("  [%d] Дата: %s, Энергия: %s", i, ts, energy != null ? String.format("%.2f", energy) : "null"));
+                }
+                LogUtil.info("------------------------------------------");
             }
+            // --- КОНЕЦ ВРЕМЕННОГО ЛОГИРОВАНИЯ ---
+            
+            Comparator<Meter> byTimeThenEnergy = Comparator
+                    .comparing(Meter::getLastMeasurementTimestamp, Comparator.nullsFirst(Comparator.naturalOrder()))
+                    .thenComparing(Meter::getEnergyTotal, Comparator.nullsFirst(Comparator.naturalOrder()));
+
+            Meter chosen = group.stream()
+                    .max(byTimeThenEnergy)
+                    .orElse(null);
 
             if (chosen != null) {
                 if ((chosen.getSerialNumber() == null || chosen.getSerialNumber().isEmpty())) {

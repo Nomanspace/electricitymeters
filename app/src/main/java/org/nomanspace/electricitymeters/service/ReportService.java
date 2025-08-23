@@ -15,6 +15,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.Comparator;
 
 import org.nomanspace.electricitymeters.util.LogUtil;
 
@@ -37,6 +38,11 @@ public class ReportService {
 
             List<Meter> latestReadings = analyzeData(rawData);
             if (latestReadings == null) return;
+
+            // Сортируем список сначала по хосту, потом по адресу для соответствия эталону
+            LogUtil.info("Сортировка результатов для отчета...");
+            latestReadings.sort(Comparator.comparing(Meter::getHost, Comparator.nullsLast(String::compareTo))
+                    .thenComparing(Meter::getAddress, Comparator.nullsLast(String::compareTo)));
 
             Path reportPath = prepareReportPath(fileContent.sourceFileName());
             if (reportPath == null) {
