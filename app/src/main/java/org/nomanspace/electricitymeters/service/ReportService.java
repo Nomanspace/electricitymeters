@@ -6,6 +6,7 @@ import org.nomanspace.electricitymeters.model.Concentrator;
 import org.nomanspace.electricitymeters.model.Meter;
 import org.nomanspace.electricitymeters.text.DatFileParseHandler;
 import org.nomanspace.electricitymeters.service.ExcelReportGenerator;
+import org.nomanspace.electricitymeters.path.ReportDirCreate;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -20,24 +21,29 @@ import java.util.Comparator;
 import org.nomanspace.electricitymeters.util.LogUtil;
 
 /**
- * Сервисный класс-оркестратор, который управляет всем процессом создания отчета.
+ * Сервисный класс-оркестратор, который управляет всем процессом создания
+ * отчета.
  */
 public class ReportService {
 
     /**
-     * Запускает полный процесс: чтение .dat файла, парсинг, анализ и формирование Excel-отчета.
+     * Запускает полный процесс: чтение .dat файла, парсинг, анализ и формирование
+     * Excel-отчета.
      */
     public void createReportFromLatestFile() {
         LogUtil.info("--- Процесс запущен ---");
         try {
             DatFileContent fileContent = readLatestDatFile();
-            if (fileContent == null) return;
+            if (fileContent == null)
+                return;
 
             List<Concentrator> rawData = parseDatFileContent(fileContent);
-            if (rawData == null) return;
+            if (rawData == null)
+                return;
 
             List<Meter> latestReadings = analyzeData(rawData);
-            if (latestReadings == null) return;
+            if (latestReadings == null)
+                return;
 
             // Сортируем список сначала по хосту, потом по адресу для соответствия эталону
             LogUtil.info("Сортировка результатов для отчета...");
@@ -81,7 +87,8 @@ public class ReportService {
         if (LogUtil.isLoggingEnabled()) {
             AtomicInteger idx = new AtomicInteger(1);
             rawData.stream().limit(5).forEach(c -> {
-                LogUtil.info("  [Концентратор " + idx.getAndIncrement() + "] '" + c.getConcentratorName() + "' -> meters: " + c.getMeters().size());
+                LogUtil.info("  [Концентратор " + idx.getAndIncrement() + "] '" + c.getConcentratorName()
+                        + "' -> meters: " + c.getMeters().size());
             });
         }
         return rawData;
@@ -100,8 +107,15 @@ public class ReportService {
         String timestamp = LocalDateTime.now().format(formatter);
         String cleanFileName = sourceFileName.replace(".dat", "");
         String reportFileName = String.format("%s_Report_from_%s.xlsx", timestamp, cleanFileName);
-        Path reportDir = Paths.get("..")
-                .resolve("Отчеты").toAbsolutePath().normalize();
+        // Path reportDir = Paths.get("..")
+        // .resolve("Отчеты").toAbsolutePath().normalize();
+        ReportDirCreate reportDirCreate = new ReportDirCreate();
+        Path reportDir = reportDirCreate.providePath();
+
+        if (reportDir == null) {
+            reportDir = Paths.get("..").resolve("Отчеты").toAbsolutePath().normalize();
+        } 
+
         try {
             Files.createDirectories(reportDir);
         } catch (IOException e) {

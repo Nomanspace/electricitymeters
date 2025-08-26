@@ -18,7 +18,7 @@ public class TargetDirectoryProvider implements PathProvider {
 
         try (BufferedReader reader = Files.newBufferedReader(configPropPath, StandardCharsets.UTF_8)) {
             properties.load(reader);
-            pathFromConfig = properties.getProperty("targetDir");
+            pathFromConfig = properties.getProperty("targetDirToDat");            
         } catch (IOException e) {
             e.printStackTrace();
             // В случае ошибки чтения конфига, выбрасываем исключение

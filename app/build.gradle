@@ -42,7 +42,10 @@ application {
 // Удобный запуск с предустановленным аргументом приложения для логирования в файл
 tasks.named('run', JavaExec).configure {
     // Передаём аргумент "--log" main-классу по умолчанию
-    args '--log'
+    //args '--log'
+    if (project.hasProperty('log') && project.property('log').toString().toBoolean()) {
+        args '--log'
+    }
 }
 
 def customOutputDir = 'C:/MyBuilds/ElectricityApp'
@@ -109,8 +112,12 @@ tasks.named('copyJpackageImage').configure {
 }
 
 tasks.named('test') {
-    enabled = false // Временно отключаем тесты
+    enabled = false 
     useJUnitPlatform()
+    testLogging {
+        events "passed", "skipped", "failed"
+        showStandardStreams = true
+    }
 }
 
 // Унифицируем кодировку компилятора, чтобы избежать проблем с символами
