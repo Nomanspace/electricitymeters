@@ -106,3 +106,5 @@ PROJECT_CONTEXT.md
 .windsurf/
 mercury-commands.txt
 app/ElectricityMetersApp.log
+.roomodes
+test_output.txt
